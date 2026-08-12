@@ -240,7 +240,7 @@ export function CropSettings() {
                   {activeImage.faceDetection.multipleFaces ? ' · largest of multiple' : ''}
                   <span className="ml-1 tabular-nums text-ink/70">
                     · pan {settings.x.toFixed(2)},{settings.y.toFixed(2)} · zoom{' '}
-                    {settings.zoom.toFixed(2)}
+                    {Math.round(settings.zoom * 100)}%
                   </span>
                 </>
               )}
@@ -333,7 +333,7 @@ export function CropSettings() {
                 type="button"
                 className="text-xs text-muted hover:text-danger"
                 disabled={disabled}
-                onClick={() => updateSettings({ preset: 'none' })}
+                onClick={() => updateSettings({ preset: 'none' }, { syncToAll: true })}
               >
                 Remove
               </button>
@@ -351,7 +351,7 @@ export function CropSettings() {
                     ? 'border-brand-600 bg-brand-700 text-white'
                     : 'border-line bg-surface text-ink hover:border-brand-400',
                 )}
-                onClick={() => updateSettings({ preset: id })}
+                onClick={() => updateSettings({ preset: id }, { syncToAll: true })}
               >
                 {PRESETS[id].label}
               </button>
@@ -367,7 +367,42 @@ export function CropSettings() {
           max={3}
           step={0.01}
           disabled={disabled}
-          onChange={(zoom) => updateSettings({ zoom }, { imageOnly: true })}
+          format={(v) => `${Math.round(v * 100)}%`}
+          inputDisplay={(v) => Math.round(v * 100)}
+          parseInput={(raw) => {
+            const n = parseFloat(raw)
+            if (Number.isNaN(n)) return null
+            return n / 100
+          }}
+          inputSuffix="%"
+          hint={
+            <div className="space-y-1.5 pt-1">
+              <div className="flex flex-wrap gap-1.5">
+                {[50, 70, 80, 100, 120, 150, 200].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    disabled={disabled}
+                    className={clsx(
+                      'rounded-md border px-2 py-1 text-[11px] font-semibold tabular-nums',
+                      Math.round(settings.zoom * 100) === pct
+                        ? 'border-brand-600 bg-brand-700 text-white'
+                        : 'border-line bg-surface text-ink hover:border-brand-400',
+                    )}
+                    onClick={() =>
+                      updateSettings({ zoom: pct / 100 }, { syncToAll: true })
+                    }
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted">
+                Choosing a zoom % applies to all photos (pan stays per image).
+              </p>
+            </div>
+          }
+          onChange={(zoom) => updateSettings({ zoom }, { syncToAll: true })}
         />
 
         <SliderField
@@ -420,7 +455,7 @@ export function CropSettings() {
           max={20}
           step={0.1}
           disabled={disabled}
-          onChange={(border) => updateSettings({ border })}
+          onChange={(border) => updateSettings({ border }, { syncToAll: true })}
         />
 
         <SliderField
@@ -430,7 +465,9 @@ export function CropSettings() {
           max={2}
           disabled={disabled}
           trackClassName="bg-gradient-to-r from-neutral-800 to-neutral-100"
-          onChange={(contrast) => updateSettings({ contrast, preset: 'none' })}
+          onChange={(contrast) =>
+            updateSettings({ contrast, preset: 'none' }, { syncToAll: true })
+          }
         />
 
         <SliderField
@@ -440,7 +477,9 @@ export function CropSettings() {
           max={2}
           disabled={disabled}
           trackClassName="bg-gradient-to-r from-neutral-900 to-white"
-          onChange={(brightness) => updateSettings({ brightness, preset: 'none' })}
+          onChange={(brightness) =>
+            updateSettings({ brightness, preset: 'none' }, { syncToAll: true })
+          }
         />
 
         <SliderField
@@ -450,7 +489,9 @@ export function CropSettings() {
           max={2}
           disabled={disabled}
           trackClassName="bg-gradient-to-r from-neutral-400 via-rose-400 via-40% via-amber-300 via-60% via-emerald-400 to-sky-400"
-          onChange={(saturation) => updateSettings({ saturation, preset: 'none' })}
+          onChange={(saturation) =>
+            updateSettings({ saturation, preset: 'none' }, { syncToAll: true })
+          }
         />
 
         <SliderField
@@ -460,7 +501,9 @@ export function CropSettings() {
           max={1}
           disabled={disabled}
           trackClassName="bg-gradient-to-r from-neutral-200 to-neutral-900"
-          onChange={(vignette) => updateSettings({ vignette, preset: 'none' })}
+          onChange={(vignette) =>
+            updateSettings({ vignette, preset: 'none' }, { syncToAll: true })
+          }
         />
       </div>
 

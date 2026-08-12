@@ -51,7 +51,13 @@ type Action =
   | { type: 'TOGGLE_SELECT'; id: string }
   | { type: 'SELECT_ALL' }
   | { type: 'DESELECT_ALL' }
-  | { type: 'UPDATE_GLOBAL'; patch: Partial<CropSettings>; pushHistory?: boolean }
+  | {
+      type: 'UPDATE_GLOBAL'
+      patch: Partial<CropSettings>
+      pushHistory?: boolean
+      syncToSelected?: boolean
+      syncToAll?: boolean
+    }
   | { type: 'UPDATE_IMAGE_SETTINGS'; id: string; patch: Partial<CropSettings>; markOverride?: boolean }
   | { type: 'APPLY_IMAGE_SETTINGS'; updates: Array<{ id: string; cropSettings: CropSettings; hasOverride?: boolean }> }
   | { type: 'RESET_SETTINGS' }
@@ -184,7 +190,15 @@ function reducer(state: StudioState, action: Action): StudioState {
           fieldPatch = { ...fieldPatch, ...preset.values, preset: action.patch.preset }
         }
       }
-      if (action.patch.preset === 'none' && !('contrast' in action.patch)) {
+      // Only wipe adjustments when Remove preset is clicked alone — not when a slider
+      // also sends preset:'none' to clear the preset label.
+      const onlyClearingPreset =
+        action.patch.preset === 'none' &&
+        !('contrast' in action.patch) &&
+        !('brightness' in action.patch) &&
+        !('saturation' in action.patch) &&
+        !('vignette' in action.patch)
+      if (onlyClearingPreset) {
         const cleared = {
           contrast: 1,
           brightness: 1,
@@ -196,20 +210,24 @@ function reducer(state: StudioState, action: Action): StudioState {
         fieldPatch = { ...fieldPatch, ...cleared }
       }
       const activeId = state.activeImageId
+      const syncIds = action.syncToAll
+        ? new Set(state.images.map((i) => i.id))
+        : action.syncToSelected
+          ? new Set(state.images.filter((i) => i.selected).map((i) => i.id))
+          : null
       return {
         ...state,
         globalSettings: next,
         historyVersion: state.historyVersion + 1,
         images: state.images.map((img) => {
-          if (activeId && img.id === activeId) {
-            return {
-              ...img,
-              // Only merge changed fields so per-image pan/zoom survive shape/border edits
-              cropSettings: { ...img.cropSettings, ...fieldPatch },
-              hasOverride: img.hasOverride,
-            }
+          const shouldUpdate =
+            (activeId && img.id === activeId) || (syncIds && syncIds.has(img.id))
+          if (!shouldUpdate) return img
+          return {
+            ...img,
+            cropSettings: { ...img.cropSettings, ...fieldPatch },
+            hasOverride: syncIds?.has(img.id) ? false : img.hasOverride,
           }
-          return img
         }),
       }
     }
@@ -222,6 +240,22 @@ function reducer(state: StudioState, action: Action): StudioState {
           if (action.patch.preset && action.patch.preset !== 'none') {
             const preset = PRESETS[action.patch.preset]
             if (preset) cropSettings = { ...cropSettings, ...preset.values }
+          }
+          const onlyClearingPreset =
+            action.patch.preset === 'none' &&
+            !('contrast' in action.patch) &&
+            !('brightness' in action.patch) &&
+            !('saturation' in action.patch) &&
+            !('vignette' in action.patch)
+          if (onlyClearingPreset) {
+            cropSettings = {
+              ...cropSettings,
+              contrast: 1,
+              brightness: 1,
+              saturation: 1,
+              vignette: 0,
+              preset: 'none',
+            }
           }
           return {
             ...img,
@@ -417,7 +451,10 @@ interface StudioContextValue {
   toggleSelect: (id: string) => void
   selectAll: () => void
   deselectAll: () => void
-  updateSettings: (patch: Partial<CropSettings>, opts?: { imageOnly?: boolean }) => void
+  updateSettings: (
+    patch: Partial<CropSettings>,
+    opts?: { imageOnly?: boolean; syncToSelected?: boolean; syncToAll?: boolean },
+  ) => void
   ensureFaceCentered: (mode?: import('../types').CenterMode) => Promise<boolean>
   recenterFace: () => Promise<boolean>
   applyToSelected: () => Promise<void>
@@ -718,7 +755,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           markOverride: true,
         })
       } else {
-        dispatch({ type: 'UPDATE_GLOBAL', patch })
+        dispatch({
+          type: 'UPDATE_GLOBAL',
+          patch,
+          syncToSelected: opts?.syncToSelected === true,
+          syncToAll: opts?.syncToAll === true,
+        })
       }
     },
     ensureFaceCentered: async (mode) => {

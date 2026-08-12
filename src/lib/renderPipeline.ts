@@ -64,13 +64,20 @@ export function renderCroppedImage(
   const cx = outputWidth * settings.x
   const cy = outputHeight * settings.y
 
+  const { contrast, brightness, saturation } = settings
+  const needsFilter = contrast !== 1 || brightness !== 1 || saturation !== 1
+
   cctx.save()
   cctx.translate(cx, cy)
   cctx.rotate((settings.rotation * Math.PI) / 180)
+  // Canvas CSS filters are reliable and avoid getImageData wiping adjustments
+  if (needsFilter) {
+    cctx.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`
+  }
   cctx.drawImage(source, -drawW / 2, -drawH / 2, drawW, drawH)
+  cctx.filter = 'none'
   cctx.restore()
 
-  applyColorAdjustments(cctx, outputWidth, outputHeight, settings)
   if (settings.vignette > 0) {
     applyVignette(cctx, outputWidth, outputHeight, settings.vignette)
   }
@@ -119,43 +126,6 @@ export function renderCroppedImage(
   return canvas
 }
 
-function applyColorAdjustments(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  settings: CropSettings,
-) {
-  const { contrast, brightness, saturation } = settings
-  if (contrast === 1 && brightness === 1 && saturation === 1) return
-
-  const imageData = ctx.getImageData(0, 0, w, h)
-  const data = imageData.data
-  const c = contrast
-  const b = brightness
-  const s = saturation
-
-  for (let i = 0; i < data.length; i += 4) {
-    let r = data[i] * b
-    let g = data[i + 1] * b
-    let bl = data[i + 2] * b
-
-    r = (r - 128) * c + 128
-    g = (g - 128) * c + 128
-    bl = (bl - 128) * c + 128
-
-    const gray = 0.2126 * r + 0.7152 * g + 0.0722 * bl
-    r = gray + (r - gray) * s
-    g = gray + (g - gray) * s
-    bl = gray + (bl - gray) * s
-
-    data[i] = clampByte(r)
-    data[i + 1] = clampByte(g)
-    data[i + 2] = clampByte(bl)
-  }
-
-  ctx.putImageData(imageData, 0, 0)
-}
-
 function applyVignette(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -168,13 +138,9 @@ function applyVignette(
   const outer = Math.hypot(cx, cy)
   const gradient = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer)
   gradient.addColorStop(0, 'rgba(0,0,0,0)')
-  gradient.addColorStop(1, `rgba(0,0,0,${Math.min(1, amount)})`)
+  gradient.addColorStop(1, `rgba(0,0,0,${Math.min(1, amount * 0.85)})`)
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, w, h)
-}
-
-function clampByte(v: number): number {
-  return Math.max(0, Math.min(255, Math.round(v)))
 }
 
 export function getOutputPixelSize(settings: CropSettings): {
