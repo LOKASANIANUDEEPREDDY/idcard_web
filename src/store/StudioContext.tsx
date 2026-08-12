@@ -879,9 +879,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       return true
     },
     applyToSelected: async () => {
-      const selected = state.images.filter((i) => i.selected)
-      if (!selected.length) {
-        toast('info', 'Select images to apply settings.')
+      const targets = state.images
+      if (!targets.length) {
+        toast('info', 'Upload images first.')
         return
       }
 
@@ -894,9 +894,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         patch: {
           isProcessing: true,
           current: 0,
-          total: selected.length,
+          total: targets.length,
           failed: 0,
-          message: `Applying face centering… 0 / ${selected.length}`,
+          message: `Applying settings… 0 / ${targets.length}`,
         },
       })
 
@@ -905,23 +905,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       let failed = 0
       let multi = 0
 
-      for (let i = 0; i < selected.length; i++) {
-        const img = selected[i]
-        // Shared visual settings from template — NOT the template's x/y/zoom when face mode
+      for (let i = 0; i < targets.length; i++) {
+        const img = targets[i]
+        // Copy visual settings (incl. zoom) from the active photo.
+        // Face mode only recalculates pan (x/y) per image — zoom is shared.
         const shared: CropSettings = {
           ...template,
           x: img.cropSettings.x,
           y: img.cropSettings.y,
-          zoom: img.cropSettings.zoom,
-          rotation: img.cropSettings.rotation,
+          zoom: template.zoom,
         }
 
         if (template.centerMode === 'manual') {
           updates.push({
             id: img.id,
-            cropSettings: {
-              ...template,
-            },
+            cropSettings: { ...template },
             hasOverride: false,
           })
         } else {
@@ -939,11 +937,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
           if (detection?.detected) {
             const framed = settingsFromFaceDetection(
-              { ...shared, centerMode: template.centerMode },
+              { ...shared, centerMode: template.centerMode, zoom: template.zoom },
               detection,
               img.width,
               img.height,
-              true,
+              false,
             )
             updates.push({ id: img.id, cropSettings: framed, hasOverride: false })
           } else {
@@ -955,6 +953,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
                 centerMode: template.centerMode,
                 x: 0.5,
                 y: 0.5,
+                zoom: template.zoom,
               },
               hasOverride: false,
             })
@@ -966,7 +965,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           patch: {
             current: i + 1,
             failed,
-            message: `Applying face centering… ${i + 1} / ${selected.length}`,
+            message: `Applying settings… ${i + 1} / ${targets.length}`,
           },
         })
         await new Promise((r) => setTimeout(r, 0))
@@ -991,6 +990,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           customShape: template.customShape,
           backgroundColor: template.backgroundColor,
           transparentBackground: template.transparentBackground,
+          zoom: template.zoom,
+          rotation: template.rotation,
         },
         pushHistory: true,
       })
@@ -1001,7 +1002,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
       toast(
         'success',
-        `Settings applied to ${selected.length} image${selected.length === 1 ? '' : 's'}.`,
+        `Settings applied to ${targets.length} image${targets.length === 1 ? '' : 's'} (zoom ${Math.round(template.zoom * 100)}%).`,
       )
       if (failed) {
         toast(

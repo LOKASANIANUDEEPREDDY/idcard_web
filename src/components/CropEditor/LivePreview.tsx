@@ -65,7 +65,7 @@ export function LivePreview() {
       e.preventDefault()
       const delta = e.deltaY > 0 ? -0.05 : 0.05
       const zoom = Math.min(3, Math.max(0.5, settings.zoom + delta))
-      updateSettings({ zoom }, { imageOnly: true })
+      updateSettings({ zoom }, { syncToAll: true })
     }
     el.addEventListener('wheel', onWheelNative, { passive: false })
     return () => el.removeEventListener('wheel', onWheelNative)
@@ -94,13 +94,13 @@ export function LivePreview() {
   }
 
   const selectedCount = selectedImages.length
+  const imageCount = state.images.length
   const cropLabel =
     selectedCount === 0
       ? 'Crop Images'
       : selectedCount === 1
         ? 'Crop 1 Image'
         : `Crop ${selectedCount} Images`
-
   const busy =
     state.processing.isProcessing || state.detectionProgress.isProcessing || applying
 
@@ -142,14 +142,15 @@ export function LivePreview() {
       </div>
 
       <p className="border-t border-line px-4 py-2 text-center text-xs text-muted">
-        Drag to pan, scroll to zoom. Apply Settings recalculates face position per image.
+        Drag to pan, scroll to zoom. Apply Settings copies zoom to every photo and
+        recenters faces individually.
       </p>
 
       <div className="flex flex-col gap-2 border-t border-line p-4 sm:flex-row">
         <button
           type="button"
           className="flex-1 rounded-xl border border-line px-4 py-3 text-sm font-semibold text-ink hover:bg-surface disabled:opacity-40"
-          disabled={selectedCount === 0 || busy}
+          disabled={imageCount === 0 || busy}
           onClick={() => setConfirmApply(true)}
         >
           Apply Settings to All
@@ -200,9 +201,9 @@ export function LivePreview() {
 
       <ConfirmDialog
         open={confirmApply}
-        title="Apply settings to selected images?"
-        description={`Apply crop settings to ${selectedCount} selected image${selectedCount === 1 ? '' : 's'}? Face centering recalculates position and zoom independently for each photo — coordinates are never copied between images.`}
-        confirmLabel="Apply"
+        title="Apply settings to all photos?"
+        description={`Apply the current zoom (${Math.round(settings.zoom * 100)}%), shape, and adjustments to all ${imageCount} photo${imageCount === 1 ? '' : 's'}? Face position is recalculated per image; zoom stays the same for everyone.`}
+        confirmLabel="Apply to All"
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => {
           setConfirmApply(false)
