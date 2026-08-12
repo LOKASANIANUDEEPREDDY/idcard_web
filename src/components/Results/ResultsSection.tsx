@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Download, Trash2 } from 'lucide-react'
+import { Download, Pencil, Trash2 } from 'lucide-react'
 import { useStudio } from '../../store/StudioContext'
 import { downloadBlob, downloadResultsAsZip, renderExportBlob } from '../../lib/export'
 import { buildExportFilename, clsx } from '../../lib/utils'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { ResultAdjustModal } from './ResultAdjustModal'
 import type { CroppedResult, ExportFormat, NamingMode } from '../../types'
 
 export function ResultsSection() {
@@ -19,6 +20,7 @@ export function ResultsSection() {
   } = useStudio()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [editingResultId, setEditingResultId] = useState<string | null>(null)
   const { results, exportSettings, processing, images } = state
   const count = results.length
 
@@ -289,7 +291,7 @@ export function ResultsSection() {
               >
                 <button
                   type="button"
-                  className="absolute left-2 top-2 z-10"
+                  className="absolute left-2 top-2 z-20"
                   onClick={() => toggleResultSelect(r.id)}
                   aria-label={`Select result ${r.filename}`}
                 >
@@ -300,11 +302,46 @@ export function ResultsSection() {
                     className="size-4 accent-brand-600"
                   />
                 </button>
-                <img
-                  src={r.objectUrl}
-                  alt={r.filename}
-                  className="aspect-square w-full object-contain"
-                />
+
+                <div className="relative aspect-square overflow-hidden rounded-lg">
+                  <img
+                    src={r.objectUrl}
+                    alt={r.filename}
+                    className="h-full w-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    data-testid="edit-result"
+                    title={`Edit '${r.filename.replace(/\.[^.]+$/, '')}'`}
+                    className={clsx(
+                      'absolute right-1.5 top-1.5 z-20 inline-flex items-center gap-1 rounded-md',
+                      'bg-brand-700 px-2 py-1 text-[11px] font-semibold text-white shadow',
+                      'opacity-100 transition',
+                      'sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100',
+                    )}
+                    onClick={() => setEditingResultId(r.id)}
+                  >
+                    <Pencil className="size-3" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    title={`Edit '${r.filename.replace(/\.[^.]+$/, '')}'`}
+                    className={clsx(
+                      'absolute inset-0 z-10 hidden items-center justify-center sm:flex',
+                      'bg-slate-950/0 transition',
+                      'opacity-0 group-hover:bg-slate-950/40 group-hover:opacity-100',
+                      'focus-visible:bg-slate-950/40 focus-visible:opacity-100',
+                    )}
+                    onClick={() => setEditingResultId(r.id)}
+                  >
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white shadow-lg ring-2 ring-white/80">
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </span>
+                  </button>
+                </div>
+
                 <p className="mt-1 truncate px-0.5 text-[10px] text-muted" title={r.filename}>
                   {r.filename}
                 </p>
@@ -339,6 +376,14 @@ export function ResultsSection() {
           setConfirmDelete(false)
         }}
       />
+
+      {editingResultId && (
+        <ResultAdjustModal
+          resultId={editingResultId}
+          onClose={() => setEditingResultId(null)}
+          onNavigate={(id) => setEditingResultId(id)}
+        />
+      )}
     </section>
   )
 }

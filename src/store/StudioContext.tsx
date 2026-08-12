@@ -64,6 +64,7 @@ type Action =
   | { type: 'SET_EXPORT'; patch: Partial<ExportSettings> }
   | { type: 'SET_PROCESSING'; patch: Partial<ProcessingState> }
   | { type: 'ADD_RESULTS'; results: CroppedResult[] }
+  | { type: 'UPDATE_RESULT'; result: CroppedResult }
   | { type: 'TOGGLE_RESULT_SELECT'; id: string }
   | { type: 'SELECT_ALL_RESULTS' }
   | { type: 'DESELECT_ALL_RESULTS' }
@@ -161,6 +162,7 @@ function reducer(state: StudioState, action: Action): StudioState {
       }
     }
     case 'SET_ACTIVE':
+      if (state.activeImageId === action.id) return state
       return { ...state, activeImageId: action.id }
     case 'TOGGLE_SELECT':
       return {
@@ -332,6 +334,22 @@ function reducer(state: StudioState, action: Action): StudioState {
         }),
       }
     }
+    case 'UPDATE_RESULT': {
+      const next = action.result
+      return {
+        ...state,
+        results: state.results.map((r) => {
+          if (r.id !== next.id) return r
+          if (r.objectUrl !== next.objectUrl) revokeIfObjectUrl(r.objectUrl)
+          return next
+        }),
+        images: state.images.map((img) =>
+          img.id === next.imageId
+            ? { ...img, status: 'cropped' as const, result: next, error: null }
+            : img,
+        ),
+      }
+    }
     case 'TOGGLE_RESULT_SELECT':
       return {
         ...state,
@@ -462,6 +480,7 @@ interface StudioContextValue {
   setExport: (patch: Partial<ExportSettings>) => void
   setShowDetectionOverlay: (value: boolean) => void
   cropSelected: () => Promise<void>
+  recropResult: (resultId: string) => Promise<boolean>
   toggleResultSelect: (id: string) => void
   selectAllResults: () => void
   deselectAllResults: () => void
@@ -728,6 +747,60 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   }, [state.images, state.exportSettings, toast])
 
+  const recropResult = useCallback(
+    async (resultId: string) => {
+      const existing = state.results.find((r) => r.id === resultId)
+      if (!existing) return false
+      const img = state.images.find((i) => i.id === existing.imageId)
+      if (!img) {
+        toast('error', 'Original photo is no longer available for this result.')
+        return false
+      }
+      const source = img.sourceBitmap ?? img.previewBitmap
+      if (!source) {
+        toast('error', 'Unable to re-crop this image. Try again.')
+        return false
+      }
+
+      try {
+        const { format, quality, transparentBackground, backgroundColor } =
+          state.exportSettings
+        const settings = {
+          ...img.cropSettings,
+          transparentBackground,
+          backgroundColor,
+        }
+        const { width, height } = getOutputPixelSize(settings)
+        const canvas = renderCroppedImage(source, settings, {
+          outputWidth: width,
+          outputHeight: height,
+          showOverlay: false,
+          transparentBackground: format === 'png' ? transparentBackground : false,
+          backgroundColor,
+        })
+        const blob = await canvasToBlob(canvas, format, quality)
+        const objectUrl = URL.createObjectURL(blob)
+        dispatch({
+          type: 'UPDATE_RESULT',
+          result: {
+            ...existing,
+            blob,
+            objectUrl,
+            width,
+            height,
+            createdAt: Date.now(),
+          },
+        })
+        return true
+      } catch (err) {
+        console.warn('Recrop failed:', err)
+        toast('error', 'Unable to update this cropped result.')
+        return false
+      }
+    },
+    [state.results, state.images, state.exportSettings, toast],
+  )
+
   const value: StudioContextValue = {
     state,
     activeImage,
@@ -742,7 +815,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       if (ids.length) dispatch({ type: 'REMOVE_IMAGES', ids })
     },
     clearAllImages: () => dispatch({ type: 'CLEAR_IMAGES' }),
-    setActive: (id) => dispatch({ type: 'SET_ACTIVE', id }),
+    setActive: (id) => {
+      if (id === state.activeImageId) return
+      dispatch({ type: 'SET_ACTIVE', id })
+    },
     toggleSelect: (id) => dispatch({ type: 'TOGGLE_SELECT', id }),
     selectAll: () => dispatch({ type: 'SELECT_ALL' }),
     deselectAll: () => dispatch({ type: 'DESELECT_ALL' }),
@@ -1024,6 +1100,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setExport: (patch) => dispatch({ type: 'SET_EXPORT', patch }),
     setShowDetectionOverlay: (value) => dispatch({ type: 'SET_SHOW_DETECTION', value }),
     cropSelected,
+    recropResult,
     toggleResultSelect: (id) => dispatch({ type: 'TOGGLE_RESULT_SELECT', id }),
     selectAllResults: () => dispatch({ type: 'SELECT_ALL_RESULTS' }),
     deselectAllResults: () => dispatch({ type: 'DESELECT_ALL_RESULTS' }),
