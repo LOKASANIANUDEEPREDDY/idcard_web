@@ -21,6 +21,7 @@ import {
 import { useStudio } from '../../store/StudioContext'
 import { renderIntoCanvas, getOutputPixelSize } from '../../lib/renderPipeline'
 import { SliderField } from '../ui/SliderField'
+import { ColorPalette } from '../ui/ColorPalette'
 import { SHAPE_LABELS } from '../../lib/shapes'
 import { PRESET_ORDER, PRESETS } from '../../lib/presets'
 import { clsx } from '../../lib/utils'
@@ -480,6 +481,12 @@ export function ResultAdjustModal({
               step={0.1}
               disabled={busy}
               onChange={(border) => patch({ border })}
+            />
+            <ColorPalette
+              label="Border color"
+              value={settings.borderColor || '#ffffff'}
+              disabled={busy || settings.border <= 0}
+              onChange={(borderColor) => patch({ borderColor })}
             />
             <SliderField
               label="Contrast"

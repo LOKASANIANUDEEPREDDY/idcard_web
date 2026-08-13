@@ -56,6 +56,7 @@ export interface CropSettings {
   unit: DimensionUnit
   aspectLocked: boolean
   border: number
+  borderColor: string
   contrast: number
   brightness: number
   saturation: number
@@ -152,6 +153,7 @@ export const DEFAULT_CROP_SETTINGS: CropSettings = {
   unit: 'px',
   aspectLocked: true,
   border: 0,
+  borderColor: '#ffffff',
   contrast: 1,
   brightness: 1,
   saturation: 1,

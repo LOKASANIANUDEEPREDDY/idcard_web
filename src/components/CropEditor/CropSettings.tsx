@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useStudio } from '../../store/StudioContext'
 import { SliderField } from '../ui/SliderField'
+import { ColorPalette } from '../ui/ColorPalette'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { SHAPE_LABELS } from '../../lib/shapes'
 import { PRESET_ORDER, PRESETS } from '../../lib/presets'
@@ -456,6 +457,15 @@ export function CropSettings() {
           step={0.1}
           disabled={disabled}
           onChange={(border) => updateSettings({ border }, { syncToAll: true })}
+        />
+
+        <ColorPalette
+          label="Border color"
+          value={settings.borderColor || '#ffffff'}
+          disabled={disabled || settings.border <= 0}
+          onChange={(borderColor) =>
+            updateSettings({ borderColor }, { syncToAll: true })
+          }
         />
 
         <SliderField

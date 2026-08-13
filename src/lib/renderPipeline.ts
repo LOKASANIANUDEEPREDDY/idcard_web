@@ -100,7 +100,7 @@ export function renderCroppedImage(
       settings.border * (Math.min(outputWidth, outputHeight) / 100),
     )
     ctx.lineWidth = borderWidth
-    ctx.strokeStyle = '#ffffff'
+    ctx.strokeStyle = settings.borderColor || '#ffffff'
     ctx.lineJoin = 'round'
     ctx.stroke(mask)
   }

@@ -1058,6 +1058,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           unit: template.unit,
           aspectLocked: template.aspectLocked,
           border: template.border,
+          borderColor: template.borderColor,
           contrast: template.contrast,
           brightness: template.brightness,
           saturation: template.saturation,
