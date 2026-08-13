@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { createId, hashPin } from './crypto'
 import { computeExpiry, createLicenseRecord, isSubscriptionActive } from './keys'
+import { mergeStarterKeys, normalizeKeyInput } from './seedKeys'
 import {
   exportDatabaseJson,
   importDatabaseJson,
@@ -81,14 +82,12 @@ function expireStaleSubscriptions(db: AuthDatabase): AuthDatabase {
     }
     return u
   })
-  const keys = db.keys.map((k) => {
-    if (k.status !== 'available' && k.status !== 'redeemed') return k
-    if (k.plan === 'lifetime') return k
-    // Redeemed keys expire with the user; available keys don't auto-expire the code itself
-    return k
-  })
-  if (!changed) return db
-  const next = { ...db, users, keys }
+
+  const merged = mergeStarterKeys(db.keys)
+  if (merged.added > 0) changed = true
+
+  if (!changed && merged.added === 0) return db
+  const next = { ...db, users, keys: merged.keys }
   saveDatabase(next)
   return next
 }
@@ -249,10 +248,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const redeemKey = useCallback(
     async (code: string) => {
       if (!user) return { ok: false, error: 'Log in first.' }
-      const normalized = code.trim().toUpperCase().replace(/\s+/g, '')
+      const normalized = normalizeKeyInput(code)
       if (!normalized) return { ok: false, error: 'Enter a subscription key.' }
 
-      const current = expireStaleSubscriptions(loadDatabase())
+      // Ensure built-in KEYS.txt codes exist before lookup
+      let current = expireStaleSubscriptions(loadDatabase())
+      setDb(current)
+
       const record = current.keys.find((k) => k.code.toUpperCase() === normalized)
       if (!record) return { ok: false, error: 'Invalid key. Check the code and try again.' }
       if (record.status === 'revoked') return { ok: false, error: 'This key has been revoked.' }
@@ -347,8 +349,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const importDb = useCallback((raw: string) => {
     try {
-      const next = importDatabaseJson(raw)
-      setDb(expireStaleSubscriptions(next))
+      const imported = importDatabaseJson(raw)
+      const next = expireStaleSubscriptions(imported)
+      setDb(next)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Import failed.' }
