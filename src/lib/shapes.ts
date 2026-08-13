@@ -1,11 +1,36 @@
 import type { CropShape, CustomShapeConfig } from '../types'
 
-/** Build a Path2D for the crop mask filling width × height. */
+/**
+ * Build a Path2D for the crop mask filling width × height.
+ * `inset` shrinks the shape so centered strokes (borders) are not clipped
+ * by the canvas edges.
+ */
 export function createShapePath(
   shape: CropShape,
   width: number,
   height: number = width,
   custom: CustomShapeConfig | null = null,
+  inset = 0,
+): Path2D {
+  const pad = Math.max(
+    0,
+    Math.min(inset, Math.min(width, height) / 2 - 1),
+  )
+  const w = Math.max(2, width - pad * 2)
+  const h = Math.max(2, height - pad * 2)
+  const inner = buildShapePath(shape, w, h, custom)
+  if (pad <= 0) return inner
+
+  const path = new Path2D()
+  path.addPath(inner, new DOMMatrix().translate(pad, pad))
+  return path
+}
+
+function buildShapePath(
+  shape: CropShape,
+  width: number,
+  height: number,
+  custom: CustomShapeConfig | null,
 ): Path2D {
   const path = new Path2D()
   const cx = width / 2

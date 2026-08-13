@@ -82,11 +82,23 @@ export function renderCroppedImage(
     applyVignette(cctx, outputWidth, outputHeight, settings.vignette)
   }
 
+  const borderWidth =
+    settings.border > 0
+      ? Math.max(
+          1,
+          settings.border * (Math.min(outputWidth, outputHeight) / 100),
+        )
+      : 0
+  // Canvas strokes are centered on the path — inset so the outer half
+  // of the border is not clipped by the square frame edges.
+  const shapeInset = borderWidth > 0 ? borderWidth / 2 : 0
+
   const mask = createShapePath(
     settings.shape,
     outputWidth,
     outputHeight,
     settings.customShape,
+    shapeInset,
   )
 
   ctx.save()
@@ -94,14 +106,11 @@ export function renderCroppedImage(
   ctx.drawImage(content, 0, 0)
   ctx.restore()
 
-  if (settings.border > 0) {
-    const borderWidth = Math.max(
-      1,
-      settings.border * (Math.min(outputWidth, outputHeight) / 100),
-    )
+  if (borderWidth > 0) {
     ctx.lineWidth = borderWidth
     ctx.strokeStyle = settings.borderColor || '#ffffff'
     ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
     ctx.stroke(mask)
   }
 
