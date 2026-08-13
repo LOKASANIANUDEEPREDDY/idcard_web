@@ -1,20 +1,42 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Crop, KeyRound, UserRound } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
 import { FREE_PHOTO_LIMIT } from '../../auth/types'
+import { toNameKey } from '../../auth/usernames'
 import { clsx } from '../../lib/utils'
 
 export function LoginPage() {
-  const { login, register } = useAuth()
+  const { login, register, isUsernameAvailable } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const usernameStatus = useMemo(() => {
+    if (mode !== 'register') return null
+    const key = toNameKey(name)
+    if (!key) return null
+    if (key === 'ceo') return 'reserved' as const
+    if (!isUsernameAvailable(name)) return 'taken' as const
+    return 'available' as const
+  }, [mode, name, isUsernameAvailable])
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (mode === 'register') {
+      if (usernameStatus === 'taken') {
+        setError('Username already taken. Choose a different name or log in.')
+        return
+      }
+      if (usernameStatus === 'reserved') {
+        setError('That name is reserved. Use Login with the CEO PIN.')
+        return
+      }
+    }
+
     setBusy(true)
     try {
       const result = mode === 'login' ? await login(name, pin) : await register(name, pin)
@@ -77,10 +99,28 @@ export function LoginPage() {
                 value={name}
                 autoComplete="username"
                 placeholder="Your name"
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  setError('')
+                }}
                 required
               />
             </div>
+            {mode === 'register' && usernameStatus === 'taken' && (
+              <p className="mt-1.5 text-xs font-medium text-danger">
+                Username already taken — every username must be unique.
+              </p>
+            )}
+            {mode === 'register' && usernameStatus === 'reserved' && (
+              <p className="mt-1.5 text-xs font-medium text-danger">
+                “CEO” is reserved. Use the Login tab instead.
+              </p>
+            )}
+            {mode === 'register' && usernameStatus === 'available' && (
+              <p className="mt-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                Username is available.
+              </p>
+            )}
           </label>
 
           <label className="block text-sm font-medium text-ink">
@@ -110,7 +150,11 @@ export function LoginPage() {
 
           <button
             type="submit"
-            disabled={busy}
+            disabled={
+              busy ||
+              (mode === 'register' &&
+                (usernameStatus === 'taken' || usernameStatus === 'reserved'))
+            }
             className="w-full rounded-xl bg-brand-700 py-3 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
           >
             {busy ? 'Please wait…' : mode === 'login' ? 'Login' : 'Create account'}
@@ -121,6 +165,10 @@ export function LoginPage() {
           <p>
             <span className="font-semibold text-ink">Free:</span> crop up to {FREE_PHOTO_LIMIT}{' '}
             photos. Need more? Redeem a subscription key after login.
+          </p>
+          <p>
+            <span className="font-semibold text-ink">Usernames</span> are unique (case-insensitive).
+            If your name is taken, log in or pick another.
           </p>
           <p>
             <span className="font-semibold text-ink">CEO:</span> login with name{' '}

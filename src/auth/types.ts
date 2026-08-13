@@ -5,6 +5,8 @@ export type KeyStatus = 'available' | 'redeemed' | 'revoked' | 'expired'
 export interface AuthUser {
   id: string
   name: string
+  /** Lowercase unique key used for username uniqueness checks. */
+  nameKey: string
   pinHash: string
   role: 'user' | 'ceo'
   plan: PlanId

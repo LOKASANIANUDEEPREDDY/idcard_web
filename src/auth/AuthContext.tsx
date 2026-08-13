@@ -10,6 +10,13 @@ import { createId, hashPin } from './crypto'
 import { computeExpiry, createLicenseRecord, isSubscriptionActive } from './keys'
 import { mergeStarterKeys, normalizeKeyInput } from './seedKeys'
 import {
+  dedupeUsersByName,
+  findUserByName,
+  isUsernameTaken,
+  normalizeDisplayName,
+  toNameKey,
+} from './usernames'
+import {
   exportDatabaseJson,
   importDatabaseJson,
   loadDatabase,
@@ -39,6 +46,7 @@ interface AuthContextValue {
   freeLimit: number
   photosRemaining: number
   canUploadCount: (count: number) => number
+  isUsernameAvailable: (name: string) => boolean
   login: (name: string, pin: string) => Promise<{ ok: boolean; error?: string }>
   register: (name: string, pin: string) => Promise<{ ok: boolean; error?: string }>
   logout: () => void
@@ -57,52 +65,53 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function normalizeName(name: string) {
-  return name.trim().replace(/\s+/g, ' ')
-}
-
-function findUser(db: AuthDatabase, name: string) {
-  const key = normalizeName(name).toLowerCase()
-  return db.users.find((u) => u.name.toLowerCase() === key) ?? null
-}
-
-function expireStaleSubscriptions(db: AuthDatabase): AuthDatabase {
+function sanitizeDatabase(db: AuthDatabase): AuthDatabase {
   const now = Date.now()
   let changed = false
-  const users = db.users.map((u) => {
-    if (u.plan === 'free' || u.plan === 'lifetime') return u
-    if (u.planExpiresAt != null && u.planExpiresAt <= now) {
+
+  const expiredUsers = db.users.map((u) => {
+    const withKey: AuthUser = {
+      ...u,
+      nameKey: u.nameKey || toNameKey(u.name),
+    }
+    if (withKey.nameKey !== u.nameKey) changed = true
+    if (withKey.plan === 'free' || withKey.plan === 'lifetime') return withKey
+    if (withKey.planExpiresAt != null && withKey.planExpiresAt <= now) {
       changed = true
       return {
-        ...u,
+        ...withKey,
         plan: 'free' as const,
         licenseKey: null,
         planExpiresAt: null,
       }
     }
-    return u
+    return withKey
   })
+
+  const deduped = dedupeUsersByName(expiredUsers)
+  if (deduped.removed > 0) changed = true
 
   const merged = mergeStarterKeys(db.keys)
   if (merged.added > 0) changed = true
 
-  if (!changed && merged.added === 0) return db
-  const next = { ...db, users, keys: merged.keys }
+  if (!changed) return db
+  const next = { ...db, users: deduped.users, keys: merged.keys }
   saveDatabase(next)
   return next
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [db, setDb] = useState<AuthDatabase>(() => expireStaleSubscriptions(loadDatabase()))
+  const [db, setDb] = useState<AuthDatabase>(() => sanitizeDatabase(loadDatabase()))
   const [userId, setUserId] = useState<string | null>(() => loadSessionUserId())
 
   const refresh = useCallback(() => {
-    setDb(expireStaleSubscriptions(loadDatabase()))
+    setDb(sanitizeDatabase(loadDatabase()))
   }, [])
 
   const persist = useCallback((next: AuthDatabase) => {
-    saveDatabase(next)
-    setDb(next)
+    const clean = sanitizeDatabase(next)
+    saveDatabase(clean)
+    setDb(clean)
   }, [])
 
   const user = useMemo(
@@ -130,16 +139,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, hasActiveSubscription],
   )
 
+  const isUsernameAvailable = useCallback(
+    (name: string) => {
+      const key = toNameKey(name)
+      if (!key) return false
+      if (key === toNameKey(CEO_NAME)) return false
+      return !isUsernameTaken(db, name)
+    },
+    [db],
+  )
+
   const ensureCeoAccount = useCallback(
     async (current: AuthDatabase): Promise<AuthDatabase> => {
-      const existing = findUser(current, CEO_NAME)
+      const existing = findUserByName(current, CEO_NAME)
       const pinHash = await hashPin(CEO_PIN, CEO_NAME)
       if (existing) {
-        if (existing.role === 'ceo' && existing.pinHash === pinHash) return current
+        if (
+          existing.role === 'ceo' &&
+          existing.pinHash === pinHash &&
+          existing.nameKey === toNameKey(CEO_NAME)
+        ) {
+          return current
+        }
         const users = current.users.map((u) =>
           u.id === existing.id
             ? {
                 ...u,
+                name: CEO_NAME,
+                nameKey: toNameKey(CEO_NAME),
                 role: 'ceo' as const,
                 plan: 'lifetime' as const,
                 planExpiresAt: null,
@@ -154,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const ceo: AuthUser = {
         id: createId('usr'),
         name: CEO_NAME,
+        nameKey: toNameKey(CEO_NAME),
         pinHash,
         role: 'ceo',
         plan: 'lifetime',
@@ -172,15 +200,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (name: string, pin: string) => {
-      const trimmed = normalizeName(name)
+      const trimmed = normalizeDisplayName(name)
       if (!trimmed) return { ok: false, error: 'Enter your name.' }
       if (!/^\d{4,8}$/.test(pin)) return { ok: false, error: 'PIN must be 4–8 digits.' }
 
-      let current = expireStaleSubscriptions(loadDatabase())
+      let current = sanitizeDatabase(loadDatabase())
       current = await ensureCeoAccount(current)
       setDb(current)
 
-      const existing = findUser(current, trimmed)
+      const existing = findUserByName(current, trimmed)
       if (!existing) {
         return { ok: false, error: 'No account found. Create one with Register.' }
       }
@@ -204,24 +232,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (name: string, pin: string) => {
-      const trimmed = normalizeName(name)
-      if (!trimmed) return { ok: false, error: 'Enter your name.' }
-      if (trimmed.toLowerCase() === CEO_NAME.toLowerCase()) {
+      const trimmed = normalizeDisplayName(name)
+      const nameKey = toNameKey(trimmed)
+      if (!trimmed || !nameKey) return { ok: false, error: 'Enter your name.' }
+      if (nameKey === toNameKey(CEO_NAME)) {
         return { ok: false, error: 'That name is reserved. Use Login with the CEO PIN.' }
       }
       if (!/^\d{4,8}$/.test(pin)) return { ok: false, error: 'PIN must be 4–8 digits.' }
 
-      let current = expireStaleSubscriptions(loadDatabase())
+      // Atomic uniqueness: reload immediately before insert
+      let current = sanitizeDatabase(loadDatabase())
       current = await ensureCeoAccount(current)
+      current = sanitizeDatabase(current)
 
-      if (findUser(current, trimmed)) {
-        return { ok: false, error: 'Name already registered. Please log in.' }
+      if (findUserByName(current, trimmed)) {
+        return {
+          ok: false,
+          error: 'Username already taken. Choose a different name or log in.',
+        }
       }
 
       const pinHash = await hashPin(pin, trimmed)
       const newUser: AuthUser = {
         id: createId('usr'),
         name: trimmed,
+        nameKey,
         pinHash,
         role: 'user',
         plan: 'free',
@@ -231,13 +266,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         createdAt: Date.now(),
         lastLoginAt: Date.now(),
       }
-      const next = { ...current, users: [...current.users, newUser] }
-      persist(next)
+
+      // Final race-safe check against latest storage
+      const latest = sanitizeDatabase(loadDatabase())
+      if (findUserByName(latest, trimmed)) {
+        return {
+          ok: false,
+          error: 'Username already taken. Choose a different name or log in.',
+        }
+      }
+
+      const next = {
+        ...latest,
+        users: [...latest.users, newUser],
+      }
+      // Bypass sanitize re-merge side effects by saving directly then sanitize
+      saveDatabase(next)
+      const clean = sanitizeDatabase(loadDatabase())
+      // Ensure we didn't collapse the new user somehow
+      if (!findUserByName(clean, trimmed)) {
+        return { ok: false, error: 'Could not create account. Try again.' }
+      }
+      setDb(clean)
       setUserId(newUser.id)
       saveSessionUserId(newUser.id)
       return { ok: true }
     },
-    [ensureCeoAccount, persist],
+    [ensureCeoAccount],
   )
 
   const logout = useCallback(() => {
@@ -251,8 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const normalized = normalizeKeyInput(code)
       if (!normalized) return { ok: false, error: 'Enter a subscription key.' }
 
-      // Ensure built-in KEYS.txt codes exist before lookup
-      let current = expireStaleSubscriptions(loadDatabase())
+      const current = sanitizeDatabase(loadDatabase())
       setDb(current)
 
       const record = current.keys.find((k) => k.code.toUpperCase() === normalized)
@@ -328,7 +382,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const keys = current.keys.map((k) =>
         k.code === code ? { ...k, status: 'revoked' as const } : k,
       )
-      // If a user currently holds this key, drop them to free
       const users = current.users.map((u) =>
         u.licenseKey === code
           ? {
@@ -336,7 +389,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               plan: 'free' as const,
               licenseKey: null,
               planExpiresAt: null,
-              role: u.name.toLowerCase() === CEO_NAME.toLowerCase() ? u.role : ('user' as const),
+              role: toNameKey(u.name) === toNameKey(CEO_NAME) ? u.role : ('user' as const),
             }
           : u,
       )
@@ -350,7 +403,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const importDb = useCallback((raw: string) => {
     try {
       const imported = importDatabaseJson(raw)
-      const next = expireStaleSubscriptions(imported)
+      const next = sanitizeDatabase(imported)
       setDb(next)
       return { ok: true }
     } catch (e) {
@@ -368,6 +421,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     freeLimit: FREE_PHOTO_LIMIT,
     photosRemaining,
     canUploadCount,
+    isUsernameAvailable,
     login,
     register,
     logout,
