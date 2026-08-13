@@ -16,6 +16,7 @@
   "dependencies": {
     "@tensorflow-models/blazeface": "^0.1.0",
     "@tensorflow/tfjs": "^4.22.0",
+    "@vercel/analytics": "^2.0.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
