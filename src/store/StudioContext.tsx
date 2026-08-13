@@ -462,7 +462,7 @@ interface StudioContextValue {
   selectedResults: CroppedResult[]
   canUndo: boolean
   canRedo: boolean
-  uploadFiles: (files: FileList | File[]) => Promise<void>
+  uploadFiles: (files: FileList | File[]) => Promise<number>
   removeSelectedImages: () => void
   clearAllImages: () => void
   setActive: (id: string | null) => void
@@ -517,7 +517,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
-      if (uploading.current) return
+      if (uploading.current) return 0
       uploading.current = true
       const list = Array.from(files)
       let ok = 0
@@ -630,6 +630,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       }
 
       uploading.current = false
+      return ok
     },
     [state.globalSettings, toast],
   )

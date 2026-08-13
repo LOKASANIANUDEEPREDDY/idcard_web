@@ -1,10 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
 import { Upload, ImagePlus } from 'lucide-react'
 import { useStudio } from '../store/StudioContext'
+import { useAuth } from '../auth/AuthContext'
 import { clsx } from '../lib/utils'
 
-export function UploadZone() {
-  const { uploadFiles, state } = useStudio()
+interface UploadZoneProps {
+  onNeedSubscribe: () => void
+}
+
+export function UploadZone({ onNeedSubscribe }: UploadZoneProps) {
+  const { uploadFiles, state, toast } = useStudio()
+  const { canUploadCount, recordPhotosUsed, hasActiveSubscription, freeLimit, photosRemaining } =
+    useAuth()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -12,19 +19,61 @@ export function UploadZone() {
   const handleFiles = useCallback(
     async (files: FileList | File[] | null) => {
       if (!files || files.length === 0) return
+      const list = Array.from(files)
+      const allowed = canUploadCount(list.length)
+      if (allowed <= 0) {
+        toast(
+          'warning',
+          `Free plan allows ${freeLimit} photos. Subscribe and enter a key to upload more.`,
+        )
+        onNeedSubscribe()
+        return
+      }
+
+      const batch = allowed < list.length ? list.slice(0, allowed) : list
+      if (allowed < list.length) {
+        toast(
+          'info',
+          `Free plan: only ${allowed} more photo${allowed === 1 ? '' : 's'} allowed. Enter a key for unlimited.`,
+        )
+        onNeedSubscribe()
+      }
+
       setBusy(true)
       try {
-        await uploadFiles(files)
+        const uploaded = await uploadFiles(batch)
+        if (uploaded > 0) recordPhotosUsed(uploaded)
       } finally {
         setBusy(false)
         if (inputRef.current) inputRef.current.value = ''
       }
     },
-    [uploadFiles],
+    [
+      canUploadCount,
+      freeLimit,
+      onNeedSubscribe,
+      recordPhotosUsed,
+      toast,
+      uploadFiles,
+    ],
   )
 
   return (
     <section id="upload-zone" className="mx-auto max-w-[1400px] px-4 pt-6 sm:px-6">
+      {!hasActiveSubscription && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+          Free plan: {Math.max(0, Number.isFinite(photosRemaining) ? photosRemaining : 0)} of{' '}
+          {freeLimit} photos remaining.{' '}
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={onNeedSubscribe}
+          >
+            Enter subscription key
+          </button>{' '}
+          for unlimited uploads during your plan.
+        </div>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <div
           role="button"
