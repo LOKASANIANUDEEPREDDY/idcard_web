@@ -89,30 +89,31 @@ export function renderCroppedImage(
           settings.border * (Math.min(outputWidth, outputHeight) / 100),
         )
       : 0
-  // Canvas strokes are centered on the path — inset so the outer half
-  // of the border is not clipped by the square frame edges.
-  const shapeInset = borderWidth > 0 ? borderWidth / 2 : 0
-
+  // Keep the outer silhouette just inside the canvas so edges aren't clipped.
+  const safetyInset = 1
   const mask = createShapePath(
     settings.shape,
     outputWidth,
     outputHeight,
     settings.customShape,
-    shapeInset,
+    safetyInset,
   )
 
   ctx.save()
   ctx.clip(mask)
   ctx.drawImage(content, 0, 0)
-  ctx.restore()
 
   if (borderWidth > 0) {
-    ctx.lineWidth = borderWidth
+    // Inside border only: stroke is centered on the path, so doubling the
+    // width and keeping the clip discards the outer half — border stays
+    // entirely inside the photo's outer line.
+    ctx.lineWidth = borderWidth * 2
     ctx.strokeStyle = settings.borderColor || '#ffffff'
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
     ctx.stroke(mask)
   }
+  ctx.restore()
 
   if (showOverlay) {
     const overlay = document.createElement('canvas')
