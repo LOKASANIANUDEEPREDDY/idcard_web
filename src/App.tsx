@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { Header } from './components/Header'
 import { UploadZone } from './components/UploadZone'
 import { CropSettings } from './components/CropEditor/CropSettings'
@@ -62,5 +63,10 @@ function StudioApp() {
 }
 
 export default function App() {
-  return <StudioApp />
+  return (
+    <>
+      <StudioApp />
+      <SpeedInsights />
+    </>
+  )
 }
