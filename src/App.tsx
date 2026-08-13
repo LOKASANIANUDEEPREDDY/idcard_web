@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Analytics } from '@vercel/analytics/react'
 import { Header } from './components/Header'
 import { UploadZone } from './components/UploadZone'
 import { CropSettings } from './components/CropEditor/CropSettings'
@@ -62,5 +63,10 @@ function StudioApp() {
 }
 
 export default function App() {
-  return <StudioApp />
+  return (
+    <>
+      <StudioApp />
+      <Analytics />
+    </>
+  )
 }
